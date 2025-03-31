@@ -1,0 +1,15 @@
+{
+  "type": "client_side_app",
+  "version": "2.0.0",
+  "name": "Image Channels",
+  "description": "",
+  "categories": [
+    "images",
+    "visualization"
+  ],
+  "min_instance_version": "6.12.34",
+  "integrated_into": ["image_annotation_tool"],
+  "gui_folder_path": "app",
+  "main_script": "src/main.py",
+  "src_dir": "src"
+}
