@@ -7,98 +7,71 @@ from sly_sdk.webpy.app import WebPyApplication
 from sly_sdk.sly_logger import logger
 
 
-select = Select(items=[Select.Item("download", "Download"), Select.Item("extract", "Extract green")], widget_id="select_widget")
-button = Button("Extract Mask", widget_id="select_button")
-layout = Container(widgets=[select, button], widget_id="select_layout")
-
-local_cache = {}
-last_geometry_version = {}
-
-# Main script must have object "app" of WebApplication class
+button = Button("Extract RGB", widget_id="extract_button")
+layout = Container(widgets=[button], widget_id="extract_layout")
 app = WebPyApplication(layout=layout)
 
+def dump(obj):
+  for attr in dir(obj):
+    print("obj.%s = %r" % (attr, getattr(obj, attr)))
 
-def download_green(image_id):
-    from sly_sdk.api.api import Api
-
-    server_address = app.get_server_address()
-    api_token = app.get_api_token()
-    api = Api(server_address, api_token, ignore_task_id=True)
-    team_id = app.get_team_id()
-    api.file.download(team_id, f"/green_mask/{image_id}.png", "/tmp/img.png")
-    mask = cv2.imread("/tmp/img.png")
-    mask = cv2.cvtColor(mask, cv2.COLOR_BGR2GRAY)
-    mask = mask.astype(bool)
-    return mask
-
-
-def extract_green(image, smooth=False):
-    lower_green = np.array([35, 50, 50])
-    upper_green = np.array([85, 255, 255])
-
-    hsv_image = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
-    green_mask = cv2.inRange(hsv_image, lower_green, upper_green)
-
-    if smooth:
-        kernel = np.ones((3, 3), np.uint8)
-        green_mask = cv2.morphologyEx(green_mask, cv2.MORPH_OPEN, kernel)
-        green_mask = cv2.morphologyEx(green_mask, cv2.MORPH_CLOSE, kernel)
-
-    green_mask = green_mask.astype(bool)
-
-    return green_mask
-
-
-def extract_green_from_figure(green, figure):
-    t = time.perf_counter()
-    figure_geometry = figure.geometry
-    logger.debug("get geometry from figure time: %.4f ms", (time.perf_counter() - t) * 1000)
-    x, y = figure_geometry["origin"]
-    mask = figure_geometry["data"]
-    green = green[y : y + mask.shape[0], x : x + mask.shape[1]]
-    mask = mask * green
-    return mask
-
-
-@app.event(app.Event.FigureGeometrySaved)
-def geometry_updated(event: WebPyApplication.Event.FigureGeometrySaved):
-    figure_id = event.figure_id
-    t = time.perf_counter()
-    figure = app.get_figure_by_id(figure_id)
-    logger.debug("get figure time: %.4f ms", (time.perf_counter() - t) * 1000)
-    if figure is None:
-        return
-    current_geom_version = figure.geometry_version
-    last_geom_version = last_geometry_version.get(figure_id, None)
-    last_geometry_version[figure_id] = current_geom_version + 2
-    if last_geom_version is not None and last_geom_version >= current_geom_version:
-        return
-    green = get_mask()
-    t = time.perf_counter()
-    mask = extract_green_from_figure(green, figure)
-    logger.debug("extract green from figure time: %.4f ms", (time.perf_counter() - t) * 1000)
-    t = time.perf_counter()
-    # figure = app.update_figures([figure])[0]
-    app.update_figure_geometry(figure, mask)
-    logger.debug("update figure time: %.4f ms", (time.perf_counter() - t) * 1000)
-
-
-def get_mask(force=False):
-    t = time.perf_counter()
-    img_id = app.get_current_image_id()
-    logger.debug("get image id time: %.4f ms", (time.perf_counter() - t) * 1000)
-    if force or img_id not in local_cache:
-        t = time.perf_counter()
-        if select.get_value() == "download":
-            green = download_green(img_id)
-        else:
-            img = app.get_current_image()
-            green = extract_green(img)
-        logger.debug("download mask time: %.4f ms", (time.perf_counter() - t) * 1000)
-        local_cache[img_id] = green
-    return local_cache[img_id]
-
+def create_channel_canvas(height, width, channel_name):
+    from js import document
+    
+    canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    canvas.style.margin = '10px'
+    canvas.id = f'channel_{channel_name}'
+    return canvas
 
 @button.click
-def save_mask():
-    get_mask(force=True)
+def extract_rgb():
+    from js import ImageData, document
+    from pyodide.ffi import create_proxy
+    
+    state = app.state
+    img_np: np.ndarray = app.get_current_image()
+    h, w = img_np.shape[0], img_np.shape[1]
+    if not hasattr(state, 'channel_container'):
+        container = document.createElement('div')
+        container.style.display = 'flex'
+        container.style.flexDirection = 'row'
+        container.style.justifyContent = 'center'
+        container.style.alignItems = 'center'
+        container.id = 'channel_container'
+        document.body.appendChild(container)
+        state.channel_container = container
+
+    if not hasattr(state, 'channel_canvases'):
+        state.channel_canvases = {
+            'R': create_channel_canvas(h, w, 'R'),
+            'G': create_channel_canvas(h, w, 'G'),
+            'B': create_channel_canvas(h, w, 'B')
+        }
+        for canvas in state.channel_canvases.values():
+            state.channel_container.appendChild(canvas)
+
+    img_arr = img_np
+    r = img_arr[:, :, 0]
+    g = img_arr[:, :, 1]
+    b = img_arr[:, :, 2]
+    channels = {'R': r, 'G': g, 'B': b}
+    for channel_name, channel_data in channels.items():
+        channel_img = np.zeros((h, w, 4), dtype=np.uint8)
+        if channel_name == 'R':
+            channel_img[:, :, 0] = channel_data
+        elif channel_name == 'G':
+            channel_img[:, :, 1] = channel_data
+        else:
+            channel_img[:, :, 2] = channel_data
+        channel_img[:, :, 3] = 255
+        
+        channel_canvas = state.channel_canvases[channel_name]
+        channel_ctx = channel_canvas.getContext("2d")
+        channel_pixels = create_proxy(channel_img.flatten())
+        channel_buf = channel_pixels.getBuffer("u8clamped")
+        channel_img_data = ImageData.new(channel_buf.data, w, h)
+        channel_ctx.putImageData(channel_img_data, 0, 0)
+        channel_pixels.destroy()
+        channel_buf.release()
