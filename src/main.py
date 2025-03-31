@@ -11,10 +11,6 @@ button = Button("Extract RGB", widget_id="extract_button")
 layout = Container(widgets=[button], widget_id="extract_layout")
 app = WebPyApplication(layout=layout)
 
-def dump(obj):
-  for attr in dir(obj):
-    print("obj.%s = %r" % (attr, getattr(obj, attr)))
-
 def create_channel_canvas(height, width, channel_name):
     from js import document
     
