@@ -21,6 +21,7 @@ channel_extractor = ChannelExtractor(app)
 
 @button.click
 def extract_rgb():
+    app.update_scene_settings(2, 2)
     channel_extractor.extract_all_channels()
 
 @button_r.click

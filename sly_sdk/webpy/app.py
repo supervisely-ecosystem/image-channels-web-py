@@ -438,17 +438,18 @@ class WebPyApplication(metaclass=Singleton):
             cols: 2,
             showHeader: true,
         """
+
+        self._store.dispatch("settings/updateSceneSettings", {"autoSelectViewOnHover": False})
         settings = {
-            "autoSelectViewOnHover": False,
             "customImagesLayout": {
                 "rows": rows,
                 "cols": cols,
                 "showHeader": True,
             }
         }
-        self._store.dispatch("scene/updateSceneSettings", settings)
+        self._store.dispatch("settings/updateSceneSettings", settings)
 
-    def create_group_views(self, image_ids):
+    def create_group_views(self, image_ids: List[int]):
         """
         this.createGroupViews({
           entities: [
@@ -459,8 +460,16 @@ class WebPyApplication(metaclass=Singleton):
           ],
         })
         """
-        entities = [self.get_image_by_id(image_id) for image_id in image_ids]
-        self._store.dispatch("scene/createGroupViews", entities)
+        # from js import ImageData
+        images_xx = [self.get_image_by_id(image_id) for image_id in image_ids]
+
+        images = [{"id": image.id} for image in images_xx]
+        print(images)
+
+        entities = {"entities": images, "checkFiguresSynchronization": False}
+        print(entities)
+
+        self._store.dispatch("views/createGroupViews", entities)
 
     def _get_js_figures(self, ids=None):
         js_figures = self._store.getters.as_object_map()["figures/figuresList"]

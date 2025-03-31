@@ -62,6 +62,8 @@ class ChannelExtractor:
             print(f"Current image id: {image_id}")
             print(f"Image shape: {img_np.shape}")
 
+            self.app.create_group_views([image_id] * 4)
+
             h, w = img_np.shape[0], img_np.shape[1]
             view = self._ensure_view_exists()
             if view is None:
