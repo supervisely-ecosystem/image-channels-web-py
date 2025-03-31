@@ -372,8 +372,23 @@ class WebPyApplication(metaclass=Singleton):
     def get_team_id(self):
         return self._context.teamId
 
+    def get_current_image_id(self):
+        views = self.get_ordered_initialized_views()
+        if not views:
+            return None
+        return views[0].data.videoId
+
     def get_current_image(self):
-        cur_img = getattr(self._store.state.videos.all, str(self._context.imageId))
+        image_id = self.get_current_image_id()
+        if image_id is None:
+            return None
+        return self.get_image_data_by_id(image_id)
+
+    def get_image_by_id(self, image_id):
+        return getattr(self._store.state.videos.all, str(image_id))
+
+    def get_image_data_by_id(self, image_id):
+        cur_img = self.get_image_by_id(image_id)
         img_src = cur_img.sources[0]
         img_cvs = img_src.imageData
         img_ctx = img_cvs.getContext("2d")
@@ -382,8 +397,70 @@ class WebPyApplication(metaclass=Singleton):
         img_arr = np.array(py_arr_data, dtype=np.uint8).reshape((img_cvs.height, img_cvs.width, 4))
         return img_arr
 
-    def get_current_image_id(self):
-        return self._context.imageId
+    def get_view_by_id(self, view_id):
+        return getattr(self._store.state.views.all, str(view_id))
+
+    def set_view_image_data(self, view_id, img_np):
+        from js import ImageData
+        from pyodide.ffi import create_proxy
+
+        cur_view = self.get_view_by_id(view_id)
+        cur_img = self.get_image_by_id(cur_view.data.videoId)
+
+        img_src = cur_img.sources[0]
+        img_cvs = img_src.imageData
+        img_ctx = img_cvs.getContext("2d")
+
+        new_img_data = img_np.flatten().astype(np.uint8)
+
+        pixels_proxy = create_proxy(new_img_data)
+        pixels_buf = pixels_proxy.getBuffer("u8clamped")
+        new_img_data = ImageData.new(pixels_buf.data, img_cvs.width, img_cvs.height)
+        
+        img_ctx.putImageData(new_img_data, 0, 0)
+        img_src.version += 1
+
+    def get_ordered_initialized_views(self) -> List[FigureObj]:
+        from pyodide.webloop import PyodideFuture
+
+        js_views = self._store.getters.as_object_map()["views/orderedInitializedViews"]
+        if isinstance(js_views, PyodideFuture):
+            js_views = await_async(js_views)
+
+        return js_views
+
+    def update_scene_settings(self, rows, cols):
+        """
+        this.updateSceneSettings({ autoSelectViewOnHover: false });
+        this.updateSceneSettings({
+          customImagesLayout: {
+            rows: 2,
+            cols: 2,
+            showHeader: true,
+        """
+        settings = {
+            "autoSelectViewOnHover": False,
+            "customImagesLayout": {
+                "rows": rows,
+                "cols": cols,
+                "showHeader": True,
+            }
+        }
+        self._store.dispatch("scene/updateSceneSettings", settings)
+
+    def create_group_views(self, image_ids):
+        """
+        this.createGroupViews({
+          entities: [
+            this.imagesList[0],
+            this.imagesList[0],
+            this.imagesList[0],
+            this.imagesList[0],
+          ],
+        })
+        """
+        entities = [self.get_image_by_id(image_id) for image_id in image_ids]
+        self._store.dispatch("scene/createGroupViews", entities)
 
     def _get_js_figures(self, ids=None):
         js_figures = self._store.getters.as_object_map()["figures/figuresList"]

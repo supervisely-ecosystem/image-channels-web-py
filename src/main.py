@@ -1,71 +1,36 @@
-import numpy as np
 from supervisely.app.widgets import Button, Container
 from sly_sdk.webpy.app import WebPyApplication
+from src.channel_extractor import ChannelExtractor
 
 
 button = Button("Extract RGB", widget_id="extract_button")
-layout = Container(widgets=[button], widget_id="extract_layout")
+button_r = Button("Extract R", widget_id="extract_r_button")
+button_g = Button("Extract G", widget_id="extract_g_button")
+button_b = Button("Extract B", widget_id="extract_b_button")
+layout = Container(widgets=[button, button_r, button_g, button_b], widget_id="extract_layout")
 app = WebPyApplication(layout=layout)
 
+import sys
+if sys.platform == 'emscripten':
+    if not "init" in app.state:
+        app.state["init"] = True
+        app.state["imagePixelsDataImageId"] = None
+        app.state["imagePixelsData"] = None
 
-def create_channel_canvas(height, width, channel_name):
-    from js import document
-
-    canvas = document.createElement("canvas")
-    canvas.width = width
-    canvas.height = height
-    canvas.style.margin = "10px"
-    canvas.id = f"channel_{channel_name}"
-    return canvas
-
+channel_extractor = ChannelExtractor(app)
 
 @button.click
 def extract_rgb():
-    from js import ImageData, document
-    from pyodide.ffi import create_proxy
+    channel_extractor.extract_all_channels()
 
-    state = app.state
-    img_np: np.ndarray = app.get_current_image()
-    h, w = img_np.shape[0], img_np.shape[1]
-    if not hasattr(state, "channel_container"):
-        container = document.createElement("div")
-        container.style.display = "flex"
-        container.style.flexDirection = "row"
-        container.style.justifyContent = "center"
-        container.style.alignItems = "center"
-        container.id = "channel_container"
-        document.body.appendChild(container)
-        state.channel_container = container
+@button_r.click
+def extract_r():
+    channel_extractor.update_view_with_channel("R")
 
-    if not hasattr(state, "channel_canvases"):
-        state.channel_canvases = {
-            "R": create_channel_canvas(h, w, "R"),
-            "G": create_channel_canvas(h, w, "G"),
-            "B": create_channel_canvas(h, w, "B"),
-        }
-        for canvas in state.channel_canvases.values():
-            state.channel_container.appendChild(canvas)
+@button_g.click
+def extract_g():
+    channel_extractor.update_view_with_channel("G")
 
-    img_arr = img_np
-    r = img_arr[:, :, 0]
-    g = img_arr[:, :, 1]
-    b = img_arr[:, :, 2]
-    channels = {"R": r, "G": g, "B": b}
-    for channel_name, channel_data in channels.items():
-        channel_img = np.zeros((h, w, 4), dtype=np.uint8)
-        if channel_name == "R":
-            channel_img[:, :, 0] = channel_data
-        elif channel_name == "G":
-            channel_img[:, :, 1] = channel_data
-        else:
-            channel_img[:, :, 2] = channel_data
-        channel_img[:, :, 3] = 255
-
-        channel_canvas = state.channel_canvases[channel_name]
-        channel_ctx = channel_canvas.getContext("2d")
-        channel_pixels = create_proxy(channel_img.flatten())
-        channel_buf = channel_pixels.getBuffer("u8clamped")
-        channel_img_data = ImageData.new(channel_buf.data, w, h)
-        channel_ctx.putImageData(channel_img_data, 0, 0)
-        channel_pixels.destroy()
-        channel_buf.release()
+@button_b.click
+def extract_b():
+    channel_extractor.update_view_with_channel("B")
