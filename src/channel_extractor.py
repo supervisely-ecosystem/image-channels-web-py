@@ -7,13 +7,16 @@ class ChannelExtractor:
         self.app = app
         self._view = None
 
-    def _ensure_view_exists(self):
+    def _ensure_view_exists(self, view_idx:int = 0):
         if self._view is None:
             views = self.app.get_ordered_initialized_views()
             if not views:
                 logger.error("No views available")
                 return None
-            self._view = views[0]
+            if len(views) <= view_idx:
+                logger.error(f"View index {view_idx} is out of range")
+                return None
+            self._view = views[view_idx]
         return self._view
 
     def _update_channel_view(self, channel_name, channel_data, width, height):
@@ -75,7 +78,7 @@ class ChannelExtractor:
         except Exception as e:
             logger.error(f"Error extracting all channels: {e}")
 
-    def update_view_with_channel(self, channel_name):
+    def update_view_with_channel(self, channel_name, view_idx:int = 0):
         try:
             image_id = self.app.get_current_image_id()
             if self.app.state["imagePixelsDataImageId"] != image_id:
@@ -96,7 +99,7 @@ class ChannelExtractor:
             channel_img[:, :, channel_idx] = channel_data
             channel_img[:, :, 3] = 255
 
-            view = self._ensure_view_exists()
+            view = self._ensure_view_exists(view_idx)
             if view is None:
                 return
                 

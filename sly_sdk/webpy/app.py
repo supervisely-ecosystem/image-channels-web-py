@@ -404,6 +404,7 @@ class WebPyApplication(metaclass=Singleton):
         from js import ImageData
         from pyodide.ffi import create_proxy
 
+        print(f"View id: {view_id}")
         cur_view = self.get_view_by_id(view_id)
         cur_img = self.get_image_by_id(cur_view.data.videoId)
 
@@ -430,16 +431,10 @@ class WebPyApplication(metaclass=Singleton):
         return js_views
 
     def update_scene_settings(self, rows, cols):
-        """
-        this.updateSceneSettings({ autoSelectViewOnHover: false });
-        this.updateSceneSettings({
-          customImagesLayout: {
-            rows: 2,
-            cols: 2,
-            showHeader: true,
-        """
+        import js
+        from pyodide.ffi import to_js
 
-        self._store.dispatch("settings/updateSceneSettings", {"autoSelectViewOnHover": False})
+        self._store.dispatch("settings/updateSceneSettings", to_js({"autoSelectViewOnHover": False}), dict_converter=js.Object.fromEntries)
         settings = {
             "customImagesLayout": {
                 "rows": rows,
@@ -447,29 +442,15 @@ class WebPyApplication(metaclass=Singleton):
                 "showHeader": True,
             }
         }
-        self._store.dispatch("settings/updateSceneSettings", settings)
+        self._store.dispatch("settings/updateSceneSettings", to_js(settings, dict_converter=js.Object.fromEntries))
 
     def create_group_views(self, image_ids: List[int]):
-        """
-        this.createGroupViews({
-          entities: [
-            this.imagesList[0],
-            this.imagesList[0],
-            this.imagesList[0],
-            this.imagesList[0],
-          ],
-        })
-        """
-        # from js import ImageData
-        images_xx = [self.get_image_by_id(image_id) for image_id in image_ids]
+        import js
+        from pyodide.ffi import to_js
 
-        images = [{"id": image.id} for image in images_xx]
-        print(images)
-
+        images = [self.get_image_by_id(image_id) for image_id in image_ids]
         entities = {"entities": images, "checkFiguresSynchronization": False}
-        print(entities)
-
-        self._store.dispatch("views/createGroupViews", entities)
+        self._store.dispatch("views/createGroupViews", to_js(entities, dict_converter=js.Object.fromEntries))
 
     def _get_js_figures(self, ids=None):
         js_figures = self._store.getters.as_object_map()["figures/figuresList"]
