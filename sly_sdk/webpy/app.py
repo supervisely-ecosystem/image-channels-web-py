@@ -128,7 +128,7 @@ class FigureObj:
             return getattr(self._js_obj, js_name)
         else:
             if default is object():
-                raise KeyError(f"Attribue '{name}' is not found")
+                raise KeyError(f"Attribute '{name}' is not found")
             return default
 
     def __getattr__(self, name):
@@ -401,25 +401,56 @@ class WebPyApplication(metaclass=Singleton):
         return getattr(self._store.state.views.all, str(view_id))
 
     def set_view_image_data(self, view_id, img_np):
+        import js
         from js import ImageData
-        from pyodide.ffi import create_proxy
+        from pyodide.ffi import create_proxy, to_js
+
+        height, width = img_np.shape[:2]
 
         print(f"View id: {view_id}")
         cur_view = self.get_view_by_id(view_id)
-        cur_img = self.get_image_by_id(cur_view.data.videoId)
+        cur_view_override_source = {
+            "offset": { "x": 0, "y": 0, "z": 0 },
+            "width": width,
+            "height": height,
+            "type": 1, # 1 canvas, 2 nrrd
+            "imageData": None,
+            "visible": True,
+            "version": 1,
+        }
 
-        img_src = cur_img.sources[0]
-        img_cvs = img_src.imageData
-        img_ctx = img_cvs.getContext("2d")
+        if hasattr(cur_view.data, "overrideSource") and cur_view.data.overrideSource is not None:
+            cur_view_override_source["version"] = cur_view.data.overrideSource.version
 
+            if cur_view_override_source["type"] == cur_view.data.overrideSource.type:
+                cur_view_override_source["imageData"] = cur_view.data.overrideSource.imageData
+                cur_view_override_source["imageData"].width = width
+                cur_view_override_source["imageData"].height = height
+
+        if cur_view_override_source["imageData"] is None:
+            cur_view_override_source["imageData"] = js.document.createElement("canvas")
+            cur_view_override_source["imageData"].width = width
+            cur_view_override_source["imageData"].height = height
+
+        img_ctx = cur_view_override_source["imageData"].getContext("2d")
         new_img_data = img_np.flatten().astype(np.uint8)
 
         pixels_proxy = create_proxy(new_img_data)
         pixels_buf = pixels_proxy.getBuffer("u8clamped")
-        new_img_data = ImageData.new(pixels_buf.data, img_cvs.width, img_cvs.height)
-        
+        new_img_data = ImageData.new(pixels_buf.data, width, height)
+
         img_ctx.putImageData(new_img_data, 0, 0)
-        img_src.version += 1
+        cur_view_override_source["version"] += 1
+
+        view_update_obj = {
+            "viewId": view_id,
+            "data": {
+                "overrideSourceEnabled": True,
+                "overrideSource": cur_view_override_source,
+            },
+        }
+
+        self._store.dispatch("views/updateViewData", to_js(view_update_obj, dict_converter=js.Object.fromEntries))
 
     def get_ordered_initialized_views(self) -> List[FigureObj]:
         from pyodide.webloop import PyodideFuture
@@ -430,19 +461,30 @@ class WebPyApplication(metaclass=Singleton):
 
         return js_views
 
-    def update_scene_settings(self, rows, cols):
+    def update_scene_settings(self, settings):
         import js
         from pyodide.ffi import to_js
 
-        self._store.dispatch("settings/updateSceneSettings", to_js({"autoSelectViewOnHover": False}), dict_converter=js.Object.fromEntries)
+        self._store.dispatch("settings/updateSceneSettings", to_js(settings, dict_converter=js.Object.fromEntries))
+
+    def create_views(self, rows, cols, image_ids, force_recreate=False, opts={}):
         settings = {
+            "autoSelectViewOnHover": False,
             "customImagesLayout": {
                 "rows": rows,
                 "cols": cols,
-                "showHeader": True,
+                **opts,
             }
         }
-        self._store.dispatch("settings/updateSceneSettings", to_js(settings, dict_converter=js.Object.fromEntries))
+
+        views = self.get_ordered_initialized_views()
+
+        if force_recreate or len(views) != rows * cols:
+            self.update_scene_settings(settings)
+            self.create_group_views(image_ids)
+            return
+
+        self.update_scene_settings(settings)
 
     def create_group_views(self, image_ids: List[int]):
         import js

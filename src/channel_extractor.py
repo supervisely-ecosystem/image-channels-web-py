@@ -19,18 +19,14 @@ class ChannelExtractor:
             self._view = views[view_idx]
         return self._view
 
-    def _update_channel_view(self, channel_name, channel_data, width, height):
+    def _update_channel_view(self, view_id, channel_name, channel_data, width, height):
         try:
             channel_img = np.zeros((height, width, 4), dtype=np.uint8)
             channel_idx = {"R": 0, "G": 1, "B": 2}[channel_name]
             channel_img[:, :, channel_idx] = channel_data
             channel_img[:, :, 3] = 255
 
-            view = self._ensure_view_exists()
-            if view is None:
-                return
-                
-            self.app.set_view_image_data(view.id, channel_img)
+            self.app.set_view_image_data(view_id, channel_img)
         except Exception as e:
             logger.error(f"Error updating channel view for {channel_name}: {e}")
 
@@ -54,27 +50,27 @@ class ChannelExtractor:
     def extract_all_channels(self):
         try:
             image_id = self.app.get_current_image_id()
+            recreate_views = False
             if self.app.state["imagePixelsDataImageId"] != image_id:
+                recreate_views = True
                 self.app.state["imagePixelsData"] = self.app.get_image_data_by_id(image_id)
                 if self.app.state["imagePixelsData"] is None:
                     logger.error("Failed to get current image")
                     return
                 self.app.state["imagePixelsDataImageId"] = image_id
-            
+
             img_np = self.app.state["imagePixelsData"]
             print(f"Current image id: {image_id}")
             print(f"Image shape: {img_np.shape}")
 
-            self.app.create_group_views([image_id] * 4)
+            self.app.create_views(2, 2, [image_id] * 4, recreate_views)
+            views = self.app.get_ordered_initialized_views()
 
             h, w = img_np.shape[0], img_np.shape[1]
-            view = self._ensure_view_exists()
-            if view is None:
-                return
 
-            for channel_name in ["R", "G", "B"]:
+            for channel_name, view in zip(["R", "G", "B"], views[1:]):
                 channel_data = img_np[:, :, {"R": 0, "G": 1, "B": 2}[channel_name]]
-                self._update_channel_view(channel_name, channel_data, w, h)
+                self._update_channel_view(view.id, channel_name, channel_data, w, h)
         except Exception as e:
             logger.error(f"Error extracting all channels: {e}")
 
@@ -87,7 +83,7 @@ class ChannelExtractor:
                     logger.error("Failed to get current image")
                     return
                 self.app.state["imagePixelsDataImageId"] = image_id
-            
+
             img_np = self.app.state["imagePixelsData"]
             print(f"Current image id: {image_id}")
             print(f"Image shape: {img_np.shape}")
@@ -102,7 +98,7 @@ class ChannelExtractor:
             view = self._ensure_view_exists(view_idx)
             if view is None:
                 return
-                
+
             self.app.set_view_image_data(view.id, channel_img)
         except Exception as e:
             logger.error(f"Error updating view with channel {channel_name}: {e}")
