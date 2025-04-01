@@ -1,13 +1,19 @@
-from supervisely.app.widgets import Button, Container
+from supervisely.app.widgets import Button, Container, Checkbox
 from sly_sdk.webpy.app import WebPyApplication
+# from sly_sdk.app.widgets.button.button import Button
+# from sly_sdk.app.widgets.container.container import Container
+# from sly_sdk.app.widgets.checkbox.checkbox import Checkbox
 from src.channel_extractor import ChannelExtractor
 
 
-button = Button("Extract RGB", widget_id="extract_button")
-button_r = Button("Extract R", widget_id="extract_r_button")
-button_g = Button("Extract G", widget_id="extract_g_button")
-button_b = Button("Extract B", widget_id="extract_b_button")
-layout = Container(widgets=[button, button_r, button_g, button_b], widget_id="extract_layout")
+checkbox_r = Checkbox("Red", checked=True, widget_id="checkbox_r")
+checkbox_g = Checkbox("Green", checked=True, widget_id="checkbox_g")
+checkbox_b = Checkbox("Blue", checked=True, widget_id="checkbox_b")
+
+button_update = Button("Update Image", widget_id="update_button")
+checkbox_container = Container(widgets=[checkbox_r, checkbox_g, checkbox_b], widget_id="checkbox_container")
+layout = Container(widgets=[checkbox_container, button_update], widget_id="main_layout")
+
 app = WebPyApplication(layout=layout)
 
 import sys
@@ -16,21 +22,26 @@ if sys.platform == 'emscripten':
         app.state["init"] = True
         app.state["imagePixelsDataImageId"] = None
         app.state["imagePixelsData"] = None
+        app.state["active_channels"] = {"R": True, "G": True, "B": True}
 
 channel_extractor = ChannelExtractor(app)
 
-@button.click
-def extract_rgb():
-    channel_extractor.extract_all_channels()
+@checkbox_r.value_changed
+def on_r_change(is_checked):
+    app.state["active_channels"]["R"] = is_checked
+    channel_extractor.update_combined_image()
 
-@button_r.click
-def extract_r():
-    channel_extractor.update_view_with_channel("R", 1)
+@checkbox_g.value_changed
+def on_g_change(is_checked):
+    app.state["active_channels"]["G"] = is_checked
+    channel_extractor.update_combined_image()
 
-@button_g.click
-def extract_g():
-    channel_extractor.update_view_with_channel("G", 2)
+@checkbox_b.value_changed
+def on_b_change(is_checked):
+    app.state["active_channels"]["B"] = is_checked
+    channel_extractor.update_combined_image()
 
-@button_b.click
-def extract_b():
-    channel_extractor.update_view_with_channel("B", 3)
+@button_update.click
+def update_image():
+    print(f"Active channels: {app.state['active_channels']}")
+    channel_extractor.update_combined_image()

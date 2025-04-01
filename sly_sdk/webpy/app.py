@@ -401,57 +401,26 @@ class WebPyApplication(metaclass=Singleton):
         return getattr(self._store.state.views.all, str(view_id))
 
     def set_view_image_data(self, view_id, img_np):
-        import js
         from js import ImageData
-        from pyodide.ffi import create_proxy, to_js
-
-        height, width = img_np.shape[:2]
-
+        from pyodide.ffi import create_proxy
+ 
         print(f"View id: {view_id}")
         cur_view = self.get_view_by_id(view_id)
-        cur_view_override_source = {
-            "offset": { "x": 0, "y": 0, "z": 0 },
-            "width": width,
-            "height": height,
-            "type": 1, # 1 canvas, 2 nrrd
-            "imageData": None,
-            "visible": True,
-            "version": 1,
-        }
+        cur_img = self.get_image_by_id(cur_view.data.videoId)
 
-        if hasattr(cur_view.data, "overrideSource") and cur_view.data.overrideSource is not None:
-            cur_view_override_source["version"] = cur_view.data.overrideSource.version
+        img_src = cur_img.sources[0]
+        img_cvs = img_src.imageData
+        img_ctx = img_cvs.getContext("2d")
 
-            if cur_view_override_source["type"] == cur_view.data.overrideSource.type:
-                cur_view_override_source["imageData"] = cur_view.data.overrideSource.imageData
-                cur_view_override_source["imageData"].width = width
-                cur_view_override_source["imageData"].height = height
-
-        if cur_view_override_source["imageData"] is None:
-            cur_view_override_source["imageData"] = js.document.createElement("canvas")
-            cur_view_override_source["imageData"].width = width
-            cur_view_override_source["imageData"].height = height
-
-        img_ctx = cur_view_override_source["imageData"].getContext("2d")
         new_img_data = img_np.flatten().astype(np.uint8)
 
         pixels_proxy = create_proxy(new_img_data)
         pixels_buf = pixels_proxy.getBuffer("u8clamped")
-        new_img_data = ImageData.new(pixels_buf.data, width, height)
+        new_img_data = ImageData.new(pixels_buf.data, img_cvs.width, img_cvs.height)
 
         img_ctx.putImageData(new_img_data, 0, 0)
-        cur_view_override_source["version"] += 1
-
-        view_update_obj = {
-            "viewId": view_id,
-            "data": {
-                "overrideSourceEnabled": True,
-                "overrideSource": cur_view_override_source,
-            },
-        }
-
-        self._store.dispatch("views/updateViewData", to_js(view_update_obj, dict_converter=js.Object.fromEntries))
-
+        img_src.version += 1
+        
     def get_ordered_initialized_views(self) -> List[FigureObj]:
         from pyodide.webloop import PyodideFuture
 
